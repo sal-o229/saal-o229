@@ -1,4 +1,4 @@
-<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
@@ -37,7 +37,8 @@
 
   #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; flex-direction: column; z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
   #overlay.show { opacity: 1; pointer-events: auto; }
-  #overlay h2 { color: #fff; font-size: 28px; margin-bottom: 25px; text-align: center; }
+  #overlay h2 { color: #fff; font-size: 28px; margin-bottom: 10px; text-align: center; text-transform: uppercase; }
+  #ovDesc { color: #ffd93d; font-size: 16px; margin-bottom: 25px; text-align: center; font-style: italic; max-width: 80%; }
   .ov-btns { display: flex; flex-direction: column; gap: 15px; width: 80%; max-width: 300px; }
   .ov-btns button { padding: 15px 30px; background: transparent; border: 2px solid #00ffff; color: #00ffff; font-size: 18px; border-radius: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
   .ov-btns button:active { background: rgba(0,255,255,0.2); }
@@ -69,6 +70,7 @@
 
 <div id="overlay">
   <h2 id="ovTitle">Ты упал...</h2>
+  <p id="ovDesc"></p>
   <div class="ov-btns">
     <button id="btn-resume">Продолжить</button>
     <button id="btn-restart">Заново</button>
@@ -93,9 +95,9 @@ bgImage.src = BG_IMAGE_URL;
 let bgLoaded = false;
 bgImage.onload = () => { bgLoaded = true; };
 
-const GRAVITY = 0.65;      
-const JUMP_POWER = -11;    
-const SPEED = 4.8;         
+const GRAVITY = 0.75;      
+const JUMP_POWER = -13;    
+const SPEED = 5;         
 const BLOCK_SIZE = 32;
 const OFFSET_Y = 100;      
 
@@ -112,6 +114,7 @@ let gameState = 'menu';
 let currentLevelIndex = 0;
 let respawnPoint = { x: 100, y: 100 };
 let cam = { x: 0, y: 0 };
+let funnyText = "";
 
 const LEVELS = [
   {
@@ -123,28 +126,28 @@ const LEVELS = [
       "....................................###.............................................................",
       "....................................................................................................",
       "...........................C............................................E...........................",
-      "..........................###.........................................###..........................",
+      "..........................####.........................................###..........................",
       "....................................................................................................",
       "..........................V.........................................................................",
       "..........................V.........................................................................",
       "..........................V.........................................................................",
       ".......................C..V.........................................................................",
       "......................###.V.........................................................................",
-      "....................................................................................................",
+      "...............####.................................................................................",
       "............................................C.......................................................",
-      "...........................................###......................................................",
+      ".....................####..................###......................................................",
       "....................................................................................................",
-      "........................................C...........................................................",
+      "...............YY.......................C...........................................................",
       ".......................................###..........................................................",
-      "....................................................................................................",
-      "...........Y..................................X.....................................................",
-      "..........###................................###....................................................",
+      "...........YY.......................................................................................",
+      "..............................................X.....................................................",
+      "..........####...............................###....................................................",
       "....................................................................................................",
       "....C...............................................................................................",
-      "...###..............................................................................................",
+      "...####.............................................................................................",
       "....................................................................................................",
       ".P..................................................................................................",
-      "####################################################################################################"
+      "##############################^^^^^^^^##############################^^^^^^^^########################"
     ]
   },
   {
@@ -173,7 +176,7 @@ const LEVELS = [
       "...###..............................................................................................",
       "....................................................................................................",
       ".P..................................................................................................",
-      "####################################################################################################"
+      "############################^^^^^^^^############################^^^^^^^^############################"
     ]
   },
   {
@@ -202,7 +205,7 @@ const LEVELS = [
       "...###..............................................................................................",
       "....................................................................................................",
       ".P..................................................................................................",
-      "####################################################################################################"
+      "########################^^^^^^^^########################^^^^^^^^########################^^^^^^^^####"
     ]
   }
 ];
@@ -210,12 +213,15 @@ const LEVELS = [
 let platforms = [];
 let coins = [];
 let vines = [];
+let hazards = [];
+let particles = [];
 let exitPoint = { x: 0, y: 0, w: BLOCK_SIZE, h: BLOCK_SIZE };
 
 const menu = document.getElementById('menu');
 const levelList = document.getElementById('level-list');
 const overlay = document.getElementById('overlay');
 const ovTitle = document.getElementById('ovTitle');
+const ovDesc = document.getElementById('ovDesc');
 const btnResume = document.getElementById('btn-resume');
 const btnRestart = document.getElementById('btn-restart');
 const btnMenu = document.getElementById('btn-menu');
@@ -244,6 +250,7 @@ pauseBtn.onclick = () => {
   if (gameState === 'play') {
     gameState = 'pause';
     ovTitle.innerText = 'Пауза';
+    ovDesc.innerText = '';
     btnResume.style.display = 'block';
     overlay.classList.add('show');
   }
@@ -270,11 +277,14 @@ function buildLevel() {
   platforms = [];
   coins = [];
   vines = [];
+  hazards = [];
+  particles = [];
   
   const map = LEVELS[currentLevelIndex].map;
   const startX = 100;
   const startY = 100;
 
+  // 1. Загружаем карту
   for (let row = 0; row < map.length; row++) {
     for (let col = 0; col < map[row].length; col++) {
       const char = map[row][col];
@@ -282,7 +292,7 @@ function buildLevel() {
       const y = startY + row * BLOCK_SIZE;
 
       if (char === '#') {
-        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE });
+        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE, isMapBlock: true });
       } else if (char === 'P') {
         respawnPoint = { x: x, y: y - player.h };
       } else if (char === 'C') {
@@ -291,14 +301,34 @@ function buildLevel() {
         exitPoint = { x, y, w: BLOCK_SIZE, h: BLOCK_SIZE };
       } else if (char === 'V') {
         vines.push({ x: x + BLOCK_SIZE/2, y: y + BLOCK_SIZE, h: BLOCK_SIZE });
+      } else if (char === '^') {
+        hazards.push({ x: x, y: y + BLOCK_SIZE - 12, w: BLOCK_SIZE, h: 12 });
       } else if (char === 'X') {
-        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE/2, baseX: x, baseY: y, move: { axis: 'x', amp: 100, speed: 0.02 } });
+        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE/2, baseX: x, baseY: y, move: { axis: 'x', amp: 100, speed: 0.02 }, isMapBlock: true });
       } else if (char === 'Y') {
-        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE/2, baseX: x, baseY: y, move: { axis: 'y', amp: 80, speed: 0.03 } });
+        platforms.push({ x, y, w: BLOCK_SIZE, h: BLOCK_SIZE/2, baseX: x, baseY: y, move: { axis: 'y', amp: 80, speed: 0.03 }, isMapBlock: true });
       }
     }
   }
   
+  // 2. ДОБАВЛЯЕМ БЕСКОНЕЧНЫЙ ГЛУБОКИЙ ПОЛ
+  const mapWidth = map[0].length;
+  const floorStartY = startY + map.length * BLOCK_SIZE; 
+  
+  // Расширяем пол далеко влево и вправо (от -20 до mapWidth + 20 колонок)
+  const extraCols = 20;
+  for (let row = 0; row < 10; row++) {
+    for (let col = -extraCols; col < mapWidth + extraCols; col++) {
+      platforms.push({
+        x: startX + col * BLOCK_SIZE,
+        y: floorStartY + row * BLOCK_SIZE,
+        w: BLOCK_SIZE,
+        h: BLOCK_SIZE,
+        isMapBlock: true // Включаем сетку для глубокого пола
+      });
+    }
+  }
+
   player.x = respawnPoint.x; 
   player.y = respawnPoint.y;
   player.vx = 0; player.vy = 0;
@@ -310,6 +340,17 @@ function buildLevel() {
   cam.x = player.x - W/2; 
   cam.y = player.y - H/2;
   btnResume.style.display = 'none';
+
+  const funnyTexts = [
+    "Даже бабушка быстрее бы справилась.",
+    "Ты сломал матрицу.",
+    "Уровень плакал, когда ты его проходил.",
+    "Эйнштейн гордится тобой... наверное.",
+    "Сойдёт для сельской местности.",
+    "Ты не прошел его, ты его пробежал!",
+    "Поздравляю, ты потратил 5 минут жизни."
+  ];
+  funnyText = funnyTexts[Math.floor(Math.random() * funnyTexts.length)];
 }
 
 const keys = { left: false, right: false, jump: false };
@@ -352,6 +393,7 @@ function update() {
     player.vy += GRAVITY;
     if (player.deathTimer <= 0) {
       ovTitle.innerText = 'Ты упал...';
+      ovDesc.innerText = 'Смерть -- это просто еще один шаг.';
       btnResume.style.display = 'none';
       overlay.classList.add('show');
       player.state = 'dead';
@@ -410,8 +452,10 @@ function update() {
   if (player.onGround && player.vx !== 0) player.walkTimer += 0.25;
   else player.walkTimer = 0;
 
-  if (player.y > 2000) {
-    player.state = 'dying'; player.deathTimer = 60; player.vy = -8;
+  for (const h of hazards) {
+    if (isColliding(player, h)) {
+      player.state = 'dying'; player.deathTimer = 60; player.vy = -8;
+    }
   }
 
   for (const c of coins) {
@@ -427,11 +471,21 @@ function update() {
   if (isColliding(player, exitPoint)) {
     gameState = 'win';
     btnResume.style.display = 'none';
-    if (currentLevelIndex < LEVELS.length - 1) {
-      ovTitle.innerText = 'Уровень пройден!';
-    } else {
-      ovTitle.innerText = 'Игра пройдена!';
+    
+    ovTitle.innerText = 'УРОВЕНЬ ПРОЙДЕН!';
+    ovDesc.innerText = funnyText;
+
+    for (let i = 0; i < 150; i++) {
+      particles.push({
+        x: W/2 + (Math.random() - 0.5) * 100, 
+        y: H/2 + (Math.random() - 0.5) * 100,
+        vx: (Math.random() - 0.5) * 20,
+        vy: (Math.random() - 0.5) * 20 - 5,
+        life: 1,
+        color: `hsl(${Math.random() * 360}, 100%, 60%)`
+      });
     }
+    
     overlay.classList.add('show');
   }
 
@@ -455,7 +509,22 @@ function drawGlow(x, y, r, color) {
 
 function draw() {
   if (bgLoaded) {
-    ctx.drawImage(bgImage, 0, 0, W, H);
+    const imgRatio = bgImage.width / bgImage.height;
+    const screenRatio = W / H;
+    let drawW, drawH, offsetX, offsetY;
+
+    if (screenRatio > imgRatio) {
+      drawW = W;
+      drawH = W / imgRatio;
+      offsetX = 0;
+      offsetY = (H - drawH) / 2;
+    } else {
+      drawH = H;
+      drawW = H * imgRatio;
+      offsetX = (W - drawW) / 2;
+      offsetY = 0;
+    }
+    ctx.drawImage(bgImage, offsetX, offsetY, drawW, drawH);
   } else {
     ctx.fillStyle = '#050508'; ctx.fillRect(0, 0, W, H);
   }
@@ -466,22 +535,34 @@ function draw() {
   ctx.save();
   ctx.translate(-Math.floor(cam.x), -Math.floor(cam.y));
 
+  // Отрисовка блоков
   for (const p of platforms) {
     ctx.fillStyle = '#1a1414'; 
     ctx.fillRect(p.x, p.y, p.w, p.h);
     
-    ctx.strokeStyle = '#0a0a0a'; 
-    ctx.lineWidth = 2;
-    const hStep = 16; 
-    for (let y = p.y; y < p.y + p.h; y += hStep) {
-      ctx.beginPath(); ctx.moveTo(p.x, y); ctx.lineTo(p.x + p.w, y); ctx.stroke();
-      const offset = (Math.floor((y - p.y) / hStep) % 2 === 0) ? 0 : 16;
-      for (let x = p.x + offset; x < p.x + p.w; x += 32) {
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + hStep); ctx.stroke();
+    if (p.isMapBlock) {
+      ctx.strokeStyle = '#0a0a0a'; 
+      ctx.lineWidth = 2;
+      const hStep = 16; 
+      for (let y = p.y; y < p.y + p.h; y += hStep) {
+        ctx.beginPath(); ctx.moveTo(p.x, y); ctx.lineTo(p.x + p.w, y); ctx.stroke();
+        const offset = (Math.floor((y - p.y) / hStep) % 2 === 0) ? 0 : 16;
+        for (let x = p.x + offset; x < p.x + p.w; x += 32) {
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + hStep); ctx.stroke();
+        }
       }
     }
-    ctx.fillStyle = '#3a3a2a'; 
-    ctx.fillRect(p.x, p.y, p.w, 3);
+  }
+
+  for (const h of hazards) {
+    ctx.fillStyle = '#888'; 
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(h.x + i * 10.5, h.y + h.h);
+      ctx.lineTo(h.x + i * 10.5 + 5.25, h.y); 
+      ctx.lineTo(h.x + i * 10.5 + 10.5, h.y + h.h);
+      ctx.fill();
+    }
   }
 
   for (const v of vines) {
@@ -512,6 +593,27 @@ function draw() {
   }
 
   drawPlayer();
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.2;
+    p.life -= 0.015;
+    
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(0.1, 4 * p.life), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+
   ctx.restore();
 
   const vg = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.9);
